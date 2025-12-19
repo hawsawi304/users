@@ -3,58 +3,63 @@ import time
 import os
 import random
 import string
+import threading
+from flask import Flask
 
-# الإعدادات - سيتم جلبها من Render لاحقاً
+# إعداد سيرفر وهمي لتشغيل Web Service
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "البوت يعمل بنجاح!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+# إعدادات البوت
 TOKEN = os.getenv("DISCORD_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-ICON_URL = "https://cdn-icons-png.flaticon.com/512/893/893257.png" 
 
 def generate_random_user():
-    # يولد يوزر 4 أحرف (حروف، أرقام، نقطة، اندر سكور)
     chars = string.ascii_lowercase + string.digits + "._"
     return ''.join(random.choice(chars) for i in range(4))
 
 def send_to_discord(user):
     embed = {
         "username": "4-Char Sniper",
-        "avatar_url": ICON_URL,
         "embeds": [{
             "title": "🎯 صيد رباعي جديد!",
-            "description": f"تم العثور على يوزر متاح مكون من 4 أحرف.",
+            "description": f"اليوزر المتاح: **{user}**",
             "color": 0x00FF7F,
-            "fields": [
-                {"name": "👤 اليوزر", "value": f"`{user}`", "inline": True},
-                {"name": "🛡️ الحالة", "value": "متاح للتسجيل ✅", "inline": False}
-            ],
-            "footer": {"text": "نظام الفحص التلقائي", "icon_url": ICON_URL},
+            "footer": {"text": "نظام الفحص التلقائي"},
             "timestamp": time.strftime('%Y-%m-%dT%H:%M:%S.000Z')
         }]
     }
     requests.post(WEBHOOK_URL, json=embed)
 
-def check():
-    target = generate_random_user()
-    url = "https://discord.com/api/v9/users/@me/pomelo-attempt"
-    headers = {
-        "Authorization": TOKEN, 
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
-    try:
-        r = requests.post(url, json={"username": target}, headers=headers)
-        if r.status_code == 200:
-            # ديسكورد أحياناً يرد بـ 200 بس يكون اليوزر مأخوذ (taken)
-            if r.json().get("taken") is False:
+def check_loop():
+    print("🚀 Sniper started inside Web Service...")
+    while True:
+        target = generate_random_user()
+        url = "https://discord.com/api/v9/users/@me/pomelo-attempt"
+        headers = {"Authorization": TOKEN, "Content-Type": "application/json"}
+        
+        try:
+            r = requests.post(url, json={"username": target}, headers=headers)
+            if r.status_code == 200 and r.json().get("taken") is False:
                 send_to_discord(target)
-                print(f"✅ Found: {target}")
-        elif r.status_code == 429:
-            print("⚠️ Rate limit! Sleeping 15m...")
-            time.sleep(900)
-    except:
-        pass
+            elif r.status_code == 429:
+                time.sleep(900)
+        except:
+            pass
+        
+        # انتظار عشوائي بين 5-10 دقائق
+        time.sleep(random.randint(300, 600))
 
-print("🚀 Sniper started...")
-while True:
-    check()
-    # انتظار عشوائي بين 5 لـ 10 دقائق للأمان
-    time.sleep(random.randint(300, 600))
+# تشغيل السيرفر والبوت معاً
+if __name__ == "__main__":
+    # تشغيل البوت في خلفية السيرفر
+    t = threading.Thread(target=check_loop)
+    t.start()
+    # تشغيل السيرفر
+    run_flask()
