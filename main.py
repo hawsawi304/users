@@ -1,36 +1,44 @@
 import os, random, time, requests, threading
 from flask import Flask
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 app = Flask('')
-# أضفنا قائمة لآخر اليوزرات المفحوصة
-stats = {"checked": 0, "found": 0, "start_time": time.time(), "msg_id": None, "last_users": []}
+stats = {
+    "checked": 0, 
+    "found": 0, 
+    "start_time": time.time(), 
+    "msg_id": None, 
+    "current_user": "جاري البدء...",
+    "last_users": []
+}
+
+# الرابط للصورة (تظهر في الأعلى دائماً)
 IMG_URL = "https://r.jina.ai/i/6f9e984d72864b97a2e7c4f1c1f0f4a1"
 
 @app.route('/')
 def home():
-    return "🚀 Live Update Sniper is Active!"
+    return "🛰️ Sniper Live Dashboard is Active!"
 
 def manage_webhook_msg():
     webhook_url = os.getenv('WEBHOOK_URL')
     if not webhook_url: return
 
     now = datetime.now(timezone.utc)
-    # تنسيق قائمة آخر اليوزرات بشكل مرتب
-    users_list = "\n".join([f"┣ 🔍 `{u}`" for u in stats["last_users"][-5:]]) if stats["last_users"] else "┣ جاري البدء..."
+    # تنسيق اليوزرات الأخيرة داخل صندوق الـ ANSI
+    users_display = "\n".join([f"┣ 🔍 `{u}`" for u in stats["last_users"][-3:]])
     
     embed = {
         "title": "✨ نظام سنايبر الهنداوية الملكي",
-        "description": f"```ansi\n[1;34mجاري الفحص الآن عن:[0m\n{users_list}\n```",
+        "description": f"```ansi\n[1;34mجاري قنص:[0m [1;37m{stats['current_user']}[0m\n\n[1;30mالسجل الأخير:[0m\n{users_display}\n```",
         "color": 16776960,
-        "image": {"url": IMG_URL},
+        "image": {"url": IMG_URL}, # الصورة في الأعلى
         "fields": [
             {"name": "⚙️ الحالة", "value": "🟢 `ONLINE`", "inline": True},
-            {"name": "🛰️ Latency", "value": f"`{random.randint(40, 120)}ms`", "inline": True},
+            {"name": "🛰️ Latency", "value": f"`{random.randint(40, 95)}ms`", "inline": True},
             {"name": "📊 الإحصائيات", "value": f"┣ المفحوص: `{stats['checked']}`\n┗ الصيد: `{stats['found']}`", "inline": False},
-            {"name": "🕒 تحديث تلقائي", "value": f"آخر تحديث: <t:{int(now.timestamp())}:R>", "inline": False}
+            {"name": "🕒 آخر تحديث للرادار", "value": f"<t:{int(now.timestamp())}:R>", "inline": False}
         ],
-        "footer": {"text": "Live Update System • v4.5"}
+        "footer": {"text": "Hindawiya Live Tracker • v5.0"}
     }
 
     payload = {"embeds": [embed]}
@@ -55,32 +63,39 @@ def check_loop():
     token = os.getenv('DISCORD_TOKEN')
     headers = {'Authorization': token}
     
+    # تحديث أولي للرسالة
+    manage_webhook_msg()
     last_ui_update = time.time()
 
     while True:
         user = get_gold_user()
-        stats["last_users"].append(user) # إضافة اليوزر للقائمة
-        if len(stats["last_users"]) > 5: stats["last_users"].pop(0) # الاحتفاظ بآخر 5 فقط
-
+        stats["current_user"] = user
+        
         try:
             r = requests.get(f'https://discord.com/api/v9/users/@me/suffixes?username={user}', headers=headers, timeout=10)
             stats["checked"] += 1
             
+            # إضافة اليوزر للسجل
+            stats["last_users"].append(user)
+            if len(stats["last_users"]) > 5: stats["last_users"].pop(0)
+
             if r.status_code == 200 and r.json().get('is_unique'):
                 stats["found"] += 1
+                # إرسال منبه صيد منفصل
                 requests.post(os.getenv('WEBHOOK_URL'), json={
-                    "content": "@everyone 🎯 صيد ملكي!",
+                    "content": "@everyone 🎯 صيد جديد!",
                     "embeds": [{"title": "💎 تم الصيد!", "description": f"اليوزر: `{user}`", "color": 5763719}]
                 })
             elif r.status_code == 429:
                 time.sleep(r.json().get('retry_after', 60))
         except: pass
         
-        # تحديث الرسالة كل دقيقتين (120 ثانية) عشان تظهر اليوزرات الجديدة
+        # تحديث "اسم اليوزر" والحالة في الرسالة كل دقيقتين
         if time.time() - last_ui_update >= 120:
             manage_webhook_msg()
             last_ui_update = time.time()
 
+        # سرعة الفحص
         time.sleep(random.randint(45, 75))
 
 if __name__ == "__main__":
