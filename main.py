@@ -1,65 +1,91 @@
-import requests
-import time
-import os
-import random
-import string
-import threading
+import os, random, time, requests, threading
 from flask import Flask
+from datetime import datetime
 
-# إعداد سيرفر وهمي لتشغيل Web Service
 app = Flask('')
+stats = {"checked": 0, "found": 0, "start_time": time.time()}
+IMG_URL = "https://r.jina.ai/i/6f9e984d72864b97a2e7c4f1c1f0f4a1"
 
 @app.route('/')
 def home():
-    return "البوت يعمل بنجاح!"
+    return "Sniper Status: ONLINE"
 
-def run_flask():
-    app.run(host='0.0.0.0', port=8080)
+def get_ping():
+    # حساب سرعة الاستجابة مع ديسكورد
+    try:
+        start = time.time()
+        requests.get("https://discord.com/api/v9/gateway")
+        return f"{int((time.time() - start) * 1000)}ms"
+    except: return "N/A"
 
-# إعدادات البوت
-TOKEN = os.getenv("DISCORD_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-
-def generate_random_user():
-    chars = string.ascii_lowercase + string.digits + "._"
-    return ''.join(random.choice(chars) for i in range(4))
-
-def send_to_discord(user):
+def send_webhook(title, description, color, ping_me=False, is_launch=False):
+    webhook_url = os.getenv('WEBHOOK_URL')
+    if not webhook_url: return
+    
+    content = "@everyone" if ping_me else ""
+    
+    # بناء الايمبد المرتب
     embed = {
-        "username": "4-Char Sniper",
-        "embeds": [{
-            "title": "🎯 صيد رباعي جديد!",
-            "description": f"اليوزر المتاح: **{user}**",
-            "color": 0x00FF7F,
-            "footer": {"text": "نظام الفحص التلقائي"},
-            "timestamp": time.strftime('%Y-%m-%dT%H:%M:%S.000Z')
-        }]
+        "title": f"✨ {title}",
+        "description": f"```ansi\n{description}\n```",
+        "color": color,
+        "image": {"url": IMG_URL},
+        "fields": [
+            {"name": "🛰️ Latency", "value": f"`{get_ping()}`", "inline": True},
+            {"name": "⚙️ Status", "value": "🟢 `ONLINE`", "inline": True}
+        ],
+        "footer": {"text": "Hindawiya Sniper Pro • v3.5", "icon_url": "https://cdn-icons-png.flaticon.com/512/944/944948.png"},
+        "timestamp": datetime.utcnow().isoformat()
     }
-    requests.post(WEBHOOK_URL, json=embed)
 
-def check_loop():
-    print("🚀 Sniper started inside Web Service...")
+    # إضافة إحصائيات الفحص فقط في التقارير والصيد
+    if not is_launch:
+        embed["fields"].append({"name": "📊 Stats", "value": f"Checked: `{stats['checked']}`\nFound: `{stats['found']}`", "inline": False})
+
+    data = {"content": content, "embeds": [embed]}
+    try: requests.post(webhook_url, json=data)
+    except: pass
+
+def get_gold_user():
+    chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    pats = [
+        lambda: f"{random.choice(chars)}.{random.choice(chars)}{random.choice(chars)}",
+        lambda: f"{random.choice(chars)}{random.choice(chars)}.{random.choice(chars)}",
+        lambda: f"{random.choice(chars)}_{random.choice(chars)}{random.choice(chars)}"
+    ]
+    return random.choice(pats)()
+
+def check_users():
+    token = os.getenv('DISCORD_TOKEN')
+    headers = {'Authorization': token}
+    last_report = time.time()
+    
+    # --- رسالة التشغيل الفخمة ---
+    send_webhook(
+        "نظام سنايبر الهنداوية", 
+        "[1;34mتم ربط النظام بسيرفرات ديسكورد...\n[1;32mالمعصوب الملكي قيد التحضير\n[1;33mجاري فحص القوائم الذهبية الآن", 
+        16776960, 
+        is_launch=True
+    )
+
     while True:
-        target = generate_random_user()
-        url = "https://discord.com/api/v9/users/@me/pomelo-attempt"
-        headers = {"Authorization": TOKEN, "Content-Type": "application/json"}
-        
+        user = get_gold_user()
         try:
-            r = requests.post(url, json={"username": target}, headers=headers)
-            if r.status_code == 200 and r.json().get("taken") is False:
-                send_to_discord(target)
+            r = requests.get(f'https://discord.com/api/v9/users/@me/suffixes?username={user}', headers=headers)
+            stats["checked"] += 1
+            if r.status_code == 200 and r.json().get('is_unique'):
+                stats["found"] += 1
+                send_webhook("🎯 صيد ملكي جديد!", f"[1;37mاليوزر: [1;32m{user}\n[1;34mالحالة: متاح للتسجيل", 5763719, ping_me=True)
             elif r.status_code == 429:
-                time.sleep(900)
-        except:
-            pass
+                time.sleep(r.json().get('retry_after', 60))
+        except: pass
         
-        # انتظار عشوائي بين 5-10 دقائق
-        time.sleep(random.randint(300, 600))
+        if time.time() - last_report >= 3600:
+            send_webhook("تقرير الساعة", "[1;37mالبوت يعمل بكفاءة عالية\n[1;32mلا توجد أخطاء تقنية", 3447003)
+            last_report = time.time()
 
-# تشغيل السيرفر والبوت معاً
+        time.sleep(random.randint(45, 80))
+
 if __name__ == "__main__":
-    # تشغيل البوت في خلفية السيرفر
-    t = threading.Thread(target=check_loop)
-    t.start()
-    # تشغيل السيرفر
-    run_flask()
+    threading.Thread(target=check_users).start()
+    app.run(host='0.0.0.0', port=8080)
