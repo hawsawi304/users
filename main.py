@@ -3,63 +3,84 @@ from flask import Flask
 from datetime import datetime
 
 app = Flask('')
+# إحصائيات دقيقة جداً
 stats = {
-    "discord": {"checked": 0, "found": 0, "msg_id": None},
-    "instagram": {"checked": 0, "found": 0, "msg_id": None},
-    "twitter": {"checked": 0, "found": 0, "msg_id": None}
+    "discord": {"checked": 0, "found": 0, "last": "Starting...", "msg_id": None, "color": 0x5865F2},
+    "instagram": {"checked": 0, "found": 0, "last": "Starting...", "msg_id": None, "color": 0xE1306C},
+    "twitter": {"checked": 0, "found": 0, "last": "Starting...", "msg_id": None, "color": 0x1DA1F2}
 }
 
-def update_embed(webhook_url, platform):
-    color = {"discord": 5814783, "instagram": 15258703, "twitter": 1942002}[platform]
-    data = stats[platform]
-    
-    payload = {
-        "embeds": [{
-            "title": f"📊 رادار {platform.capitalize()}",
-            "description": f"┣ **المفحوص:** `{data['checked']}`\n┗ **الصيد:** `{data['found']}`",
-            "color": color,
-            "footer": {"text": f"آخر تحديث: {datetime.now().strftime('%H:%M:%S')}"}
-        }]
-    }
-    
-    if data["msg_id"] is None:
-        # إرسال رسالة جديدة لأول مرة
-        r = requests.post(f"{webhook_url}?wait=true", json=payload)
-        if r.status_code in [200, 201]:
-            data["msg_id"] = r.json()['id']
-    else:
-        # تحديث الرسالة الموجودة (لتقليل الإزعاج)
-        requests.patch(f"{webhook_url}/messages/{data['msg_id']}", json=payload)
+lock = threading.Lock()
 
-def sniper_engine():
-    token = os.getenv('DISCORD_TOKEN')
-    webhook_url = os.getenv('WEBHOOK_URL')
+@app.route('/')
+def home(): return "TURBO_SNIPER_v2025_ONLINE"
+
+def update_live_embed(webhook_url, platform):
+    with lock:
+        data = stats[platform]
+        payload = {
+            "embeds": [{
+                "title": f"🚀 رادار {platform.upper()} المطور",
+                "description": (
+                    f"📊 **الإحصائيات الحالية:**\n"
+                    f"┣ المفحوص: `{data['checked']}`\n"
+                    f"┗ الصيد: `{data['found']}`\n\n"
+                    f"🔍 **آخر فحص:** `{data['last']}`\n"
+                    f"⚡ **الحالة:** `فحص نشط (تيربو)`"
+                ),
+                "color": data["color"],
+                "timestamp": datetime.utcnow().isoformat(),
+                "footer": {"text": "تحديث لحظي - الإصدار الأخير 2025"}
+            }]
+        }
     
+    try:
+        if data["msg_id"] is None:
+            r = requests.post(f"{webhook_url}?wait=true", json=payload)
+            if r.status_code in [200, 201]: data["msg_id"] = r.json()['id']
+        else:
+            requests.patch(f"{webhook_url}/messages/{data['msg_id']}", json=payload)
+    except: pass
+
+def discord_worker(token, webhook):
     while True:
+        user = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=4))
         try:
-            # 1. ديسكورد
-            d_user = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=4))
-            r_d = requests.get(f'https://discord.com/api/v9/users/@me/suffixes?username={d_user}', headers={'Authorization': token}, timeout=5)
-            stats["discord"]["checked"] += 1
-            if r_d.status_code == 200 and r_d.json().get('is_unique'):
-                requests.post(webhook_url, json={"content": f"@everyone 🚨 **صيد ديسكورد رباعي:** `{d_user}`"})
-                stats["discord"]["found"] += 1
-            
-            # 2. انستقرام
-            i_user = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789._", k=5))
-            r_i = requests.get(f"https://www.instagram.com/{i_user}/", timeout=5)
-            stats["instagram"]["checked"] += 1
-            if r_i.status_code == 404:
-                requests.post(webhook_url, json={"content": f"📸 **صيد انستا خماسي:** `{i_user}`"})
-                stats["instagram"]["found"] += 1
-
-            # تحديث الإيمبد كل 10 عمليات فحص عشان ما يجي حظر
-            if stats["discord"]["checked"] % 10 == 0:
-                for p in ["discord", "instagram"]: update_embed(webhook_url, p)
-
+            r = requests.get(f'https://discord.com/api/v9/users/@me/suffixes?username={user}', 
+                             headers={'Authorization': token}, timeout=5)
+            with lock:
+                stats["discord"]["checked"] += 1
+                stats["discord"]["last"] = user
+            if r.status_code == 200 and r.json().get('is_unique'):
+                requests.post(webhook, json={"content": f"@everyone 🎯 **ديسكورد رباعي لقطة!** `{user}`"})
+                with lock: stats["discord"]["found"] += 1
+            update_live_embed(webhook, "discord")
         except: pass
-        time.sleep(random.randint(40, 50))
+        time.sleep(15) # سرعة عالية جداً لديسكورد
+
+def social_worker(platform, webhook):
+    while True:
+        user = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789._", k=5))
+        url = f"https://www.{platform}.com/{user}"
+        try:
+            r = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+            with lock:
+                stats[platform]["checked"] += 1
+                stats[platform]["last"] = user
+            if r.status_code == 404:
+                requests.post(webhook, json={"content": f"📸 **{platform} متاح:** `{user}`"})
+                with lock: stats[platform]["found"] += 1
+            update_live_embed(webhook, platform)
+        except: pass
+        time.sleep(10) # سرعة جنونية للسوشيال
 
 if __name__ == "__main__":
-    threading.Thread(target=sniper_engine, daemon=True).start()
+    token = os.getenv('DISCORD_TOKEN')
+    webhook = os.getenv('WEBHOOK_URL')
+    
+    # تشغيل المسارات المتوازية
+    threading.Thread(target=discord_worker, args=(token, webhook), daemon=True).start()
+    threading.Thread(target=social_worker, args=("instagram", webhook), daemon=True).start()
+    threading.Thread(target=social_worker, args=("twitter", webhook), daemon=True).start()
+    
     app.run(host='0.0.0.0', port=10000)
