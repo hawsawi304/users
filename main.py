@@ -2,81 +2,92 @@ import os, random, time, requests, threading, datetime
 from flask import Flask
 
 app = Flask('')
-stats = {"dc_c": 0, "dc_f": 0, "ig_c": 0, "ig_f": 0, "tw_c": 0, "tw_f": 0}
+stats = {"dc_c": 0, "dc_f": 0, "ig_c": 0, "ig_f": 0}
 
 @app.route('/')
-def home(): return "DIRECT_SNIPER_ACTIVE"
+def home(): return "PROTECTION_BYPASS_V33"
 
-# هيدرز بسيطة ومباشرة (نفس اللي صادت لك أول مرة)
-H = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+# هيدرز "نخاع" النظام - تحاكي متصفح سفاري على آيفون 17 بدقة
+H = {
+    "Accept": "application/json",
+    "Accept-Language": "ar-SA,en-US;q=0.9",
+    "Connection": "keep-alive",
+    "Host": "discord.com",
+    "Origin": "https://discord.com",
+    "Referer": "https://discord.com/register",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+}
 
-def send_alert(webhook, platform, user):
-    # إرسال منشن مباشر وقوي بدون تعقيد
-    payload = {
-        "content": f"@everyone 🎯 **صيد {platform} جديد!** \n✅ اليوزر: **`{user}`**",
-        "username": "Sniper Bot"
-    }
-    requests.post(webhook, json=payload)
+def notify(webhook, platform, user):
+    # منشن @everyone فوري عند الصيد
+    try:
+        payload = {"content": f"🚨 @everyone \n🎯 **صيد {platform} نادِر!** \n✅ اليوزر: **`{user}`**"}
+        requests.post(webhook, json=payload, timeout=5)
+    except: pass
 
 def update_ui(webhook):
-    # تحديث العداد كل 10 ثواني (عشان ما يزحم القناة)
-    m_id = {"dc": None, "ig": None, "tw": None}
+    m_id = None
     while True:
         try:
-            for p, color in [("dc", 0x5865F2), ("ig", 0xE1306C), ("tw", 0x1DA1F2)]:
-                payload = {
-                    "embeds": [{
-                        "title": f"📡 رادار {p.upper()}",
-                        "description": f"📊 فحص: `{stats[p+'_c']}` | 🎯 صيد: `{stats[p+'_f']}`",
-                        "color": color
-                    }]
-                }
-                if m_id[p] is None:
-                    r = requests.post(webhook + "?wait=true", json=payload)
-                    m_id[p] = r.json()['id']
-                else:
-                    requests.patch(f"{webhook}/messages/{m_id[p]}", json=payload)
-            time.sleep(10)
+            payload = {
+                "embeds": [{
+                    "title": "📡 رادار الاختراق (V33)",
+                    "description": "تم تفعيل وضع محاكاة التسجيل البشري",
+                    "fields": [
+                        {"name": "Discord (4 Chars)", "value": f"📊 `{stats['dc_c']}` | 🎯 `{stats['dc_f']}`", "inline": True},
+                        {"name": "Instagram (5 Chars)", "value": f"📊 `{stats['ig_c']}` | 🎯 `{stats['ig_f']}`", "inline": True}
+                    ],
+                    "color": 0xe74c3c,
+                    "footer": {"text": "System Active | No Detection"},
+                    "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }]
+            }
+            if m_id is None:
+                r = requests.post(webhook + "?wait=true", json=payload)
+                m_id = r.json()['id']
+            else:
+                requests.patch(f"{webhook}/messages/{m_id}", json=payload)
         except: pass
+        time.sleep(25)
 
-def dc_engine(webhook):
+def dc_bypass(webhook):
+    # الحروف والأرقام للفحص
+    chars = "abcdefghijklmnopqrstuvwxyz0123456789"
     while True:
         try:
-            u = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=4))
-            r = requests.post("https://discord.com/api/v9/unique-username/username-attempt-unauthed", 
+            u = "".join(random.choices(chars, k=4))
+            # ضرب رابط التسجيل (الباب الخلفي)
+            r = requests.post("https://discord.com/api/v9/auth/register/check-username", 
                             json={"username": u}, headers=H, timeout=5)
             stats["dc_c"] += 1
-            if r.status_code == 200 and r.json().get("taken") == False:
+            
+            # إذا الرد 200 يعني اليوزر "غير موجود" ومتاح للتسجيل
+            if r.status_code == 200:
                 stats["dc_f"] += 1
-                send_alert(webhook, "Discord", u) # منشن فوري
-            time.sleep(0.8) 
-        except: time.sleep(2)
+                notify(webhook, "Discord", u)
+            
+            # سرعة "المنطقة الرمادية" (ثانية ونصف بين كل طلب)
+            time.sleep(1.5)
+        except: time.sleep(10)
 
-def social_engine(webhook):
+def ig_bypass(webhook):
     while True:
         try:
-            # انستا
-            u_ig = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789._", k=5))
-            r_ig = requests.get(f"https://www.instagram.com/{u_ig}/?__a=1&__d=dis", headers=H, timeout=5)
+            u = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789._", k=5))
+            # رابط التحقق الداخلي لتطبيق انستا
+            r = requests.post("https://www.instagram.com/api/v1/users/check_username/", 
+                            data={"username": u}, headers=H, timeout=5)
             stats["ig_c"] += 1
-            if r_ig.status_code == 404:
+            if r.status_code == 200 and r.json().get("available") == True:
                 stats["ig_f"] += 1
-                send_alert(webhook, "Instagram", u_ig)
-            
-            # تويتر
-            u_tw = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=5))
-            r_tw = requests.get(f"https://twitter.com/{u_tw}", headers=H, timeout=5)
-            stats["tw_c"] += 1
-            if r_tw.status_code == 404:
-                stats["tw_f"] += 1
-                send_alert(webhook, "Twitter", u_tw)
-            time.sleep(10)
-        except: time.sleep(5)
+                notify(webhook, "Instagram", u)
+            time.sleep(15)
+        except: time.sleep(10)
 
 if __name__ == "__main__":
     url = os.getenv('WEBHOOK_URL')
     if url:
         threading.Thread(target=update_ui, args=(url,), daemon=True).start()
-        threading.Thread(target=dc_engine, args=(url,), daemon=True).start()
-        threading.Thread(target=social_engine, args=(url,), daemon=True).start()
+        threading.Thread(target=dc_bypass, args=(url,), daemon=True).start()
+        threading.Thread(target=ig_bypass, args=(url,), daemon=True).start()
         app.run(host='0.0.0.0', port=10000)
