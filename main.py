@@ -10,7 +10,7 @@ stats = {
 lock = threading.Lock()
 
 @app.route('/')
-def home(): return "SYSTEM_STABLE_v4"
+def home(): return "DIAGNOSTIC_MODE_ACTIVE"
 
 def update_embed(webhook_url, platform):
     with lock:
@@ -19,14 +19,8 @@ def update_embed(webhook_url, platform):
         payload = {
             "embeds": [{
                 "title": f"🛰️ رادار {platform.upper()}",
-                "description": (
-                    f"📊 **الفحص:** `{data['checked']}`\n"
-                    f"🎯 **المتاح:** `{data['found']}`\n"
-                    f"🔍 **آخر يوزر:** `{data['last']}`\n"
-                    f"⏱️ **آخر تحديث:** `{now}`"
-                ),
-                "color": data["color"],
-                "footer": {"text": "النظام يعمل بنظام فحص الوجود"}
+                "description": f"📊 **الفحص:** `{data['checked']}`\n🎯 **المتاح:** `{data['found']}`\n🔍 **آخر يوزر:** `{data['last']}`\n⏱️ **تحديث:** `{now}`",
+                "color": data["color"]
             }]
         }
     try:
@@ -35,36 +29,46 @@ def update_embed(webhook_url, platform):
             if r.status_code in [200, 201]: data["msg_id"] = r.json()['id']
         else:
             requests.patch(f"{webhook_url}/messages/{data['msg_id']}", json=payload)
-    except: pass
+    except Exception as e:
+        print(f"⚠️ خطأ في تحديث الإيمبد ({platform}): {e}")
 
 def startup_test(webhook):
-    """ فحص تأكيدي لمرة واحدة عند التشغيل """
-    test_user = "test_user_" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=10))
-    print(f"Checking test user: {test_user}")
+    """ فحص تشخيصي شامل عند البداية """
+    test_user = "check_" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=12))
+    print(f"🚀 بدأت عملية التشخيص... جاري فحص يوزر وهمي: {test_user}")
     try:
-        r = requests.get(f"https://www.instagram.com/{test_user}", timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+        # فحص جودة الاتصال
+        r = requests.get(f"https://www.instagram.com/{test_user}", timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        print(f"📡 حالة اتصال الإنترنت (Instagram): {r.status_code}")
+        
         if r.status_code == 404:
-            requests.post(webhook, json={"content": f"✅ **تم الاتصال بنجاح!**\n فحص التأكيد صاد يوزر متاح: `{test_user}`\nالآن بدأ الصيد الفعلي..."})
-    except: pass
+            print("✅ نظام 404 يعمل: اليوزر متاح فعلاً.")
+            # فحص الويب هوك
+            res = requests.post(webhook, json={"content": f"⚙️ **تقرير التشخيص:** الاتصال سليم، الويب هوك يعمل، واليوزر التجريبي متاح: `{test_user}`"})
+            if res.status_code in [200, 204]:
+                print("✅ الويب هوك سليم: الرسالة وصلت ديسكورد.")
+            else:
+                print(f"❌ مشكلة في الويب هوك! الكود المستلم: {res.status_code} - الرد: {res.text}")
+    except Exception as e:
+        print(f"❌ فشل التشخيص بالكامل! السبب: {e}")
 
 def discord_worker(webhook):
-    chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    token = os.getenv('DISCORD_TOKEN')
     while True:
-        user = "".join(random.choices(chars, k=4))
+        user = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=4))
         try:
             r = requests.get(f"https://discord.com/api/v9/users/{user}/profile", timeout=5)
             with lock: stats["discord"]["checked"] += 1; stats["discord"]["last"] = user
             if r.status_code == 404:
-                requests.post(webhook, json={"content": f"@everyone 🎯 **صيد ديسكورد رباعي:** `{user}`"})
+                requests.post(webhook, json={"content": f"@everyone 🎯 **ديسكورد متاح:** `{user}`"})
                 with lock: stats["discord"]["found"] += 1
             update_embed(webhook, "discord")
         except: pass
         time.sleep(15)
 
 def social_worker(platform, webhook):
-    chars = "abcdefghijklmnopqrstuvwxyz0123456789._"
     while True:
-        user = "".join(random.choices(chars, k=5))
+        user = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789._", k=5))
         try:
             r = requests.get(f"https://www.{platform}.com/{user}", timeout=5, headers={"User-Agent": "Mozilla/5.0"})
             with lock: stats[platform]["checked"] += 1; stats[platform]["last"] = user
@@ -77,13 +81,11 @@ def social_worker(platform, webhook):
 
 if __name__ == "__main__":
     webhook = os.getenv('WEBHOOK_URL')
-    
-    # 1. تشغيل فحص التأكيد أولاً
-    threading.Thread(target=startup_test, args=(webhook,)).start()
-    
-    # 2. تشغيل الفحص المستمر
-    threading.Thread(target=discord_worker, args=(webhook,), daemon=True).start()
-    threading.Thread(target=social_worker, args=("instagram", webhook), daemon=True).start()
-    threading.Thread(target=social_worker, args=("twitter", webhook), daemon=True).start()
-    
-    app.run(host='0.0.0.0', port=10000)
+    if not webhook:
+        print("❌ خطأ: لم يتم العثور على رابط WEBHOOK_URL في الإعدادات!")
+    else:
+        threading.Thread(target=startup_test, args=(webhook,)).start()
+        threading.Thread(target=discord_worker, args=(webhook,), daemon=True).start()
+        threading.Thread(target=social_worker, args=("instagram", webhook), daemon=True).start()
+        threading.Thread(target=social_worker, args=("twitter", webhook), daemon=True).start()
+        app.run(host='0.0.0.0', port=10000)
