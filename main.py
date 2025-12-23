@@ -1,65 +1,93 @@
 import os, random, time, requests, threading
 from flask import Flask
 
-app = Flask('')
+app = Flask(__name__)
 stats_lock = threading.Lock()
 stats = {"c": 0, "f": 0}
 
 @app.route('/')
-def home(): return "ANTI_CLOUDFLARE_MODE"
+def home():
+    return "BOT_STATUS: ACTIVE", 200
 
 def hunt(webhook):
-    # قائمة يوزر أجينت متنوعة لتمويه الحماية
+    # استخدام Session يسرع الطلبات 3 مرات أكثر من requests العادي
+    session = requests.Session()
     UAs = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
     ]
     
     while True:
         try:
             u = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=4))
-            headers = {"Content-Type": "application/json", "User-Agent": random.choice(UAs)}
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": random.choice(UAs),
+                "Referer": "https://discord.com/"
+            }
             
-            r = requests.post("https://discord.com/api/v9/unique-username/username-attempt-unauthed", 
-                            json={"username": u}, headers=headers, timeout=10)
+            response = session.post(
+                "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
+                json={"username": u}, 
+                headers=headers, 
+                timeout=5
+            )
+
+            # التعامل مع حظر Cloudflare والـ Rate Limit
+            if response.status_code == 429:
+                print("🚨 Rate Limited! Waiting 3 minutes...")
+                time.sleep(180) # انتظار أطول لفك الحظر
+                continue
             
-            # أهم جزء: اكتشاف حماية Cloudflare
-            if r.status_code == 429 or "cf-error-details" in r.text:
-                print("🚨 Cloudflare Blocked us! Sleeping for 5 minutes...")
-                time.sleep(300) # ارقد 5 دقائق عشان ما يطردونا نهائياً
+            if "cf-error-details" in response.text:
+                print("🛡️ Cloudflare Block detected! Cooling down...")
+                time.sleep(300)
                 continue
 
             with stats_lock:
                 stats["c"] += 1
             
-            if r.status_code == 200 and r.json().get("taken") is False:
-                with stats_lock:
-                    stats["f"] += 1
-                requests.post(webhook, json={"content": f"🚨 @everyone \n🎯 صيد رباعي: `{u}`"})
-            
-            # سرعة "آمنة" (فحص كل ثانيتين)
-            time.sleep(2.1)
-            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("taken") is False:
+                    with stats_lock:
+                        stats["f"] += 1
+                    # إرسال الصيد فوراً في Thread منفصل لعدم تعطيل الفحص
+                    threading.Thread(target=lambda: requests.post(webhook, json={"content": f"🎯 **صيد جديد:** `{u}`"})).start()
+
+            # سرعة الفحص (2.2 ثانية لتجنب كشف البوت)
+            time.sleep(2.2)
+
         except Exception as e:
-            time.sleep(10)
+            print(f"Error: {e}")
+            time.sleep(5)
 
 def update_ui(webhook):
-    m_id = None
     while True:
         try:
             with stats_lock:
                 c, f = stats["c"], stats["f"]
-            payload = {"embeds": [{"title": "🛡️ رادار التخفي V37", "description": f"📊 فحص: `{c}` | 🎯 صيد: `{f}`", "color": 0xe74c3c}]}
-            r = requests.post(webhook + "?wait=true", json=payload, timeout=15)
-            if m_id is None and r.status_code == 200: m_id = r.json().get('id')
-            elif m_id: requests.patch(f"{webhook}/messages/{m_id}", json=payload)
-        except: pass
-        time.sleep(30)
+            
+            payload = {
+                "embeds": [{
+                    "title": "🛡️ رادار التخفي - إحصائيات حية",
+                    "description": f"📊 تم فحص: `{c}`\n🎯 تم صيد: `{f}`",
+                    "color": 0x27ae60,
+                    "footer": {"text": "تحديث تلقائي كل 60 ثانية"}
+                }]
+            }
+            requests.post(webhook, json=payload, timeout=10)
+        except:
+            pass
+        time.sleep(60)
 
 if __name__ == "__main__":
     url = os.getenv('WEBHOOK_URL')
     if url:
-        threading.Thread(target=update_ui, args=(url,), daemon=True).start()
+        # تشغيل الفحص وتحديث الإحصائيات في مسارات منفصلة
         threading.Thread(target=hunt, args=(url,), daemon=True).start()
-    app.run(host='0.0.0.0', port=10000)
+        threading.Thread(target=update_ui, args=(url,), daemon=True).start()
+    
+    # Render يحتاج ربط الـ Port ديناميكياً
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
