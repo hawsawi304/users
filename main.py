@@ -1,83 +1,76 @@
-import requests
-import time
 import os
-import random
-import string
+import time
+import requests
 from flask import Flask
 from threading import Thread
+from datetime import datetime
 
-# ===== Flask App (مهم لـ Render + gunicorn) =====
+# ----------------- FLASK APP -----------------
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Sniper is Active"
+    return "Service is running"
 
-# ===== ENV =====
-TOKEN = os.getenv("DISCORD_TOKEN")
+# ----------------- ENV -----------------
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-MY_ID = os.getenv("YOUR_USER_ID")
 
-print("=== ENV CHECK ===")
-print("TOKEN:", "OK" if TOKEN else "MISSING")
-print("WEBHOOK_URL:", "OK" if WEBHOOK_URL else "MISSING")
-print("MY_ID:", "OK" if MY_ID else "MISSING")
-print("=================")
+# ----------------- EMBED SENDER -----------------
+def send_embed(status="RUNNING"):
+    if not WEBHOOK_URL:
+        print("❌ WEBHOOK_URL غير موجود في ENV")
+        return
 
-# ===== Sniper =====
-def start_sniping():
-    time.sleep(10)
-    print("🚀 SNIPER STARTED")
+    payload = {
+        "username": "Ultra Monitor",
+        "embeds": [
+            {
+                "title": "📡 Live Embed Test",
+                "description": f"الحالة الحالية: **{status}**",
+                "color": 0x00FF00,
+                "fields": [
+                    {
+                        "name": "🕒 الوقت",
+                        "value": datetime.utcnow().strftime("%H:%M:%S"),
+                        "inline": False
+                    }
+                ],
+                "footer": {
+                    "text": "Render Web Service"
+                }
+            }
+        ]
+    }
 
-    # اختبار الويبهوك
     try:
         r = requests.post(
             WEBHOOK_URL,
-            json={"content": "✅ Webhook test message"},
+            json=payload,
             timeout=10
         )
-        print("WEBHOOK TEST STATUS:", r.status_code)
+
+        print("📤 Webhook status code:", r.status_code)
+
+        if r.status_code not in (200, 204):
+            print("❌ Webhook response:", r.text)
+        else:
+            print("✅ Embed تم إرساله بنجاح")
+
     except Exception as e:
-        print("❌ WEBHOOK ERROR:", e)
-        return
+        print("❌ Exception أثناء الإرسال:", e)
+
+# ----------------- BACKGROUND THREAD -----------------
+def background_worker():
+    print("🚀 Background worker started")
+    time.sleep(10)
 
     while True:
-        target = ''.join(random.choice(string.ascii_lowercase) for _ in range(3)) + random.choice("._0123456789")
-        headers = {"Authorization": TOKEN}
-        url = f"https://discord.com/api/v9/users/search?query={target}"
+        send_embed("ALIVE")
+        time.sleep(60)  # يحدث كل دقيقة
 
-        try:
-            res = requests.get(url, headers=headers, timeout=10)
-            print("SEARCH STATUS:", res.status_code, "TARGET:", target)
+# ----------------- START THREAD -----------------
+Thread(target=background_worker, daemon=True).start()
 
-            if res.status_code == 200:
-                users = res.json().get("users", [])
-                if not any(u.get("username", "").lower() == target.lower() for u in users):
-                    payload = {
-                        "content": f"<@{MY_ID}> 🎯 Available: `{target}`",
-                        "username": "Ultra Sniper"
-                    }
-                    wh = requests.post(WEBHOOK_URL, json=payload, timeout=10)
-                    print("SEND RESULT:", wh.status_code)
-
-            elif res.status_code == 401:
-                print("❌ TOKEN INVALID")
-                break
-
-            elif res.status_code == 429:
-                print("⏳ RATE LIMITED")
-                time.sleep(60)
-
-        except Exception as e:
-            print("❌ LOOP ERROR:", e)
-
-        time.sleep(25)
-
-# ===== Start background thread =====
-thread = Thread(target=start_sniping)
-thread.daemon = True
-thread.start()
-
-# ===== Local run only =====
+# ----------------- RUN -----------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
