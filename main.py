@@ -6,63 +6,78 @@ import string
 from flask import Flask
 from threading import Thread
 
-app = Flask('')
+# ===== Flask App (مهم لـ Render + gunicorn) =====
+app = Flask(__name__)
 
-@app.route('/')
+@app.route("/")
 def home():
     return "Sniper is Active"
 
-# --- المتغيرات ---
+# ===== ENV =====
 TOKEN = os.getenv("DISCORD_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 MY_ID = os.getenv("YOUR_USER_ID")
 
-# --- دالة الصيد ---
-def start_sniping():
-    # تأخير بسيط للتأكد أن السيرفر استقر
-    time.sleep(15)
-    print("🚀 الصيد بدأ الآن...")
+print("=== ENV CHECK ===")
+print("TOKEN:", "OK" if TOKEN else "MISSING")
+print("WEBHOOK_URL:", "OK" if WEBHOOK_URL else "MISSING")
+print("MY_ID:", "OK" if MY_ID else "MISSING")
+print("=================")
 
-    # إرسال رسالة ترحيبية للتأكد أن الويب هوك شغال
-    initial_payload = {"content": "✅ تم تشغيل الصياد بنجاح وهو الآن يراقب..."}
+# ===== Sniper =====
+def start_sniping():
+    time.sleep(10)
+    print("🚀 SNIPER STARTED")
+
+    # اختبار الويبهوك
     try:
-        requests.post(WEBHOOK_URL, json=initial_payload)
+        r = requests.post(
+            WEBHOOK_URL,
+            json={"content": "✅ Webhook test message"},
+            timeout=10
+        )
+        print("WEBHOOK TEST STATUS:", r.status_code)
     except Exception as e:
-        print("Webhook error:", e)
+        print("❌ WEBHOOK ERROR:", e)
+        return
 
     while True:
-        # توليد يوزر 4 أزرار
         target = ''.join(random.choice(string.ascii_lowercase) for _ in range(3)) + random.choice("._0123456789")
         headers = {"Authorization": TOKEN}
         url = f"https://discord.com/api/v9/users/search?query={target}"
 
         try:
             res = requests.get(url, headers=headers, timeout=10)
+            print("SEARCH STATUS:", res.status_code, "TARGET:", target)
+
             if res.status_code == 200:
-                users = res.json().get('users', [])
-                if not any(u.get('username', '').lower() == target.lower() for u in users):
-                    msg = {
-                        "content": f"<@{MY_ID}> 🎯 صيد محتمل: `{target}`",
+                users = res.json().get("users", [])
+                if not any(u.get("username", "").lower() == target.lower() for u in users):
+                    payload = {
+                        "content": f"<@{MY_ID}> 🎯 Available: `{target}`",
                         "username": "Ultra Sniper"
                     }
-                    requests.post(WEBHOOK_URL, json=msg)
-                    print(f"Hit: {target}")
-            elif res.status_code == 429:
-                time.sleep(60)
-            elif res.status_code == 401:
-                print("❌ التوكن خطأ!")
-                break
-        except Exception as e:
-            print("Request error:", e)
+                    wh = requests.post(WEBHOOK_URL, json=payload, timeout=10)
+                    print("SEND RESULT:", wh.status_code)
 
-        # وقت أمان (25 ثانية)
+            elif res.status_code == 401:
+                print("❌ TOKEN INVALID")
+                break
+
+            elif res.status_code == 429:
+                print("⏳ RATE LIMITED")
+                time.sleep(60)
+
+        except Exception as e:
+            print("❌ LOOP ERROR:", e)
+
         time.sleep(25)
 
-# --- التشغيل الرئيسي ---
+# ===== Start background thread =====
+thread = Thread(target=start_sniping)
+thread.daemon = True
+thread.start()
+
+# ===== Local run only =====
 if __name__ == "__main__":
-    # تشغيل الصيد في الخلفية
-    daemon = Thread(target=start_sniping, daemon=True)
-    daemon.start()
-    
-    # تشغيل Flask
-    app.run(host='0.0.0.0', port=10000)
+    app.run(host="0.0.0.0", port=10000)
