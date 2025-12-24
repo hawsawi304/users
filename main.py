@@ -9,61 +9,60 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "USER SNIPER IS ACTIVE 🛡️"
+    return "4-Letter Sniper Active 🛡️"
 
-# --- الإعدادات من Render ---
+# --- الـ Env المطلوبة في Render ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-def check_username(target):
-    # رابط البحث المخصص للحسابات البشرية
-    url = f"https://discord.com/api/v9/users/search?query={target}&limit=1"
-    
-    headers = {
-        # التوكن الشخصي يوضع هنا كما هو بدون كلمة Bot
-        "Authorization": TOKEN.strip(),
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "X-Discord-Locale": "en-US",
-        "X-Debug-Options": "bugReporterEnabled"
+def send_to_webhook(target):
+    # تنسيق الإيمبد (Embed) بدون ما يخرب السكربت
+    embed = {
+        "username": "User Sniper",
+        "embeds": [{
+            "title": "🎯 صيد رباعي جديد!",
+            "description": f"اليوزر متاح حالياً: `{target}`",
+            "color": 5763719,  # لون أخضر
+            "fields": [
+                {"name": "عدد الحروف", "value": "4", "inline": True},
+                {"name": "الرابط", "value": f"[حجز اليوزر](https://discord.com/settings/user-profile)", "inline": True}
+            ],
+            "footer": {"text": "تم الصيد بواسطة نظام 22/12 المطور"}
+        }]
     }
-    
+    requests.post(WEBHOOK_URL, json=embed)
+
+def check_username(user):
+    # الطريقة اللي كانت شغالة الساعة 9 (طريقة الـ search)
+    url = f"https://discord.com/api/v9/users/search?query={user}&limit=1"
+    headers = {
+        "Authorization": TOKEN.strip() if TOKEN else "",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Mobile/15E148 Safari/604.1",
+        "Content-Type": "application/json"
+    }
     try:
         r = requests.get(url, headers=headers, timeout=5)
-        
         if r.status_code == 200:
             data = r.json()
-            # إذا لم يجد مستخدمين بهذا الاسم، يعني اليوزر متاح
-            if len(data.get("users", [])) == 0:
+            if not data.get("users"):
                 return True
         elif r.status_code == 429:
-            print("⚠️ ضغط عالي (Rate Limit)، سأنتظر دقيقتين...")
-            time.sleep(120)
-        elif r.status_code == 401:
-            print("❌ التوكن غير صحيح أو انتهت صلاحيته!")
+            time.sleep(120) # حماية من الـ Rate Limit
         return False
     except:
         return False
 
 def run_sniper():
-    print("🚀 بدأ الصيد عبر الحساب الشخصي...")
-    
-    if WEBHOOK_URL:
-        requests.post(WEBHOOK_URL, json={"content": "✅ **تم التوصيل بالحساب الشخصي!** بدأ الفحص الآن..."})
-
+    print("🚀 تم تشغيل نسخة 22/12 المحدثة (4 حروف فقط)...")
     while True:
-        # توليد يوزر (مثلاً: 4 حروف عشوائية)
-        target = "".join(random.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(4))
+        # تثبيت الصيد على 4 حروف بالضبط (مزيج حروف وأرقام)
+        chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+        target = "".join(random.choice(chars) for _ in range(4))
         
         if check_username(target):
-            print(f"🎯 صيد: {target}")
-            if WEBHOOK_URL:
-                requests.post(WEBHOOK_URL, json={
-                    "content": f"🎯 **يوزر متاح للحجز!**\nالاسم: `{target}`\nرابط المطالبة: https://discord.com/settings/user-profile"
-                })
+            send_to_webhook(target)
         
-        # وقت انتظار "بشري" (مهم جداً لحماية حسابك من التبند)
-        # سينتظر بين دقيقة ودقيقتين بين كل فحص
+        # حماية الحساب (وقت انتظار متغير بين 60 و 120 ثانية)
         time.sleep(random.uniform(60, 120))
 
 Thread(target=run_sniper, daemon=True).start()
