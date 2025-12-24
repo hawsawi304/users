@@ -16,12 +16,12 @@ stats = {
     "msg_id": None
 }
 
-# ================== HOME ROUTE ==================
+# ================== HOME ==================
 @app.route("/")
 def home():
     return f"V7 PRO IS RUNNING - CHECKED: {stats['checked']}"
 
-# ================== DISCORD STATUS UPDATER ==================
+# ================== DISCORD STATUS ==================
 def update_status(webhook):
     while True:
         try:
@@ -60,11 +60,10 @@ def sniper():
     if not webhook:
         return
 
-    # إشعار تشغيل
     try:
         requests.post(
             webhook,
-            json={"content": "🚀 **بوت القنص V7 اشتغل بنجاح!**"},
+            json={"content": "🚀 **بوت V7 اشتغل بنجاح!**"},
             timeout=10
         )
     except:
@@ -104,10 +103,10 @@ def sniper():
         except:
             time.sleep(10)
 
-# ================== START ON FIRST REQUEST ==================
+# ================== START ON FIRST REQUEST (FLASK 3 SAFE) ==================
 started = False
 
-@app.before_first_request
+@app.before_request
 def start_sniper_once():
     global started
     if not started:
