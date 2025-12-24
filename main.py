@@ -4,83 +4,105 @@ import random
 import requests
 from flask import Flask
 from threading import Thread
+from datetime import datetime, timezone
 
-app = Flask('')
+app = Flask(__name__)
 
-@app.route('/')
+@app.route("/")
 def home():
-    return "High-Accuracy Humanoid Sniper is Online"
+    return "Sniper is LIVE"
 
-# --- الإعدادات (تأكد من وضعها في Render) ---
-TOKEN = os.getenv("DISCORD_TOKEN") # توكن حسابك الشخصي
+# --- الإعدادات من Render ---
+TOKEN = os.getenv("DISCORD_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 MY_ID = os.getenv("YOUR_USER_ID")
 
-def check_internal_api(target):
-    # هذا هو "الـ API الداخلي" الذي يستخدمه المستخدم العادي عند البحث عن صديق
+# --- متغيرات الحالة ---
+total_checks = 0
+hits = 0
+current_username = "في انتظار البدء..."
+message_id = None
+
+def send_monitor_embed(status="HUNTING 🎯"):
+    global message_id
+    payload = {
+        "username": "Ultra Sniper Monitor",
+        "embeds": [{
+            "title": "💎 نظام المراقبة عالي الدقة",
+            "description": f"✅ **الحالة:** {status}",
+            "color": 0x5865F2,
+            "fields": [
+                {"name": "👤 المفحوص", "value": f"`{current_username}`", "inline": True},
+                {"name": "📊 الإجمالي", "value": f"`{total_checks}`", "inline": True},
+                {"name": "🎯 الصيد", "value": f"`{hits}`", "inline": True}
+            ],
+            "footer": {"text": f"آخر تحديث: {datetime.now().strftime('%H:%M:%S')}"}
+        }]
+    }
+    try:
+        if message_id:
+            requests.patch(f"{WEBHOOK_URL}/messages/{message_id}", json=payload)
+        else:
+            r = requests.post(f"{WEBHOOK_URL}?wait=true", json=payload)
+            if r.status_code in [200, 201]:
+                message_id = r.json().get("id")
+    except: pass
+
+def check_internal(target):
+    if not TOKEN:
+        print("❌ ERROR: DISCORD_TOKEN is missing!")
+        return None
+    
     url = f"https://discord.com/api/v9/users/search?query={target}"
+    # هيدرز دقيقة لمحاكاة المتصفح ومنع خطأ 400
     headers = {
-        "Authorization": TOKEN,
+        "Authorization": TOKEN.strip(), # إزالة أي فراغات زائدة
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "X-Discord-Locale": "en-US"
     }
     
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            users = data.get("users", [])
-            # المنطق الذهبي: إذا لم يوجد أي مستخدم بهذا الاسم تماماً
-            is_taken = any(u.get("username", "").lower() == target.lower() for u in users)
-            return not is_taken # إذا لم يكن مأخوذاً، فهو متاح
-            
-        elif response.status_code == 429: # حظر مؤقت (Rate Limit)
-            wait = response.json().get("retry_after", 60)
-            print(f"⚠️ ديسكورد كشف السرعة! انتظر {wait} ثانية")
-            time.sleep(wait)
-        elif response.status_code == 401:
-            print("❌ التوكن غير صحيح أو انتهت صلاحيته")
-            
-    except Exception as e:
-        print(f"Error: {e}")
-    return False
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            users = r.json().get("users", [])
+            return not any(u.get("username", "").lower() == target.lower() for u in users)
+        else:
+            print(f"⚠️ SEARCH ERROR: {r.status_code} for {target}")
+            return None
+    except: return None
 
-def generate_rare_name():
-    # توليد يوزر 4 أزرار (3 حروف + رمز/رقم) لزيادة الندرة
-    chars = "abcdefghijklmnopqrstuvwxyz"
-    symbols = "._0123456789"
-    name = "".join(random.choice(chars) for _ in range(3)) + random.choice(symbols)
-    return name
+def worker():
+    global total_checks, hits, current_username
+    
+    print("🚀 محاولة إرسال الإيمبد الأول...")
+    time.sleep(5) # انتظار استقرار الخدمة
+    send_monitor_embed()
 
-def start_hunting():
-    print("🚀 بدأ نظام البحث عالي الدقة (محاكاة بشرية)...")
     while True:
-        target = generate_rare_name()
+        # توليد اسم (3 حروف + رقم/رمز)
+        target = "".join(random.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(3)) + random.choice("._0123456789")
+        current_username = target
+        total_checks += 1
         
-        # الفحص عبر النظام الداخلي
-        if check_internal_api(target):
-            # صيد مؤكد بنسبة عالية!
-            payload = {
-                "content": f"<@{MY_ID}> 🎯 **صيد عالي الدقة (80% متاح)!**\nالاسم: `{target}`\nافحصه الآن يدوياً!",
-                "username": "Ultra Sniper (Self-Mode)"
-            }
-            requests.post(WEBHOOK_URL, json=payload)
-            print(f"✅ تم العثور على: {target}")
-            # استراحة طويلة بعد الصيد عشان ما ننكشف
-            time.sleep(random.randint(60, 120))
+        result = check_internal(target)
         
-        # أهم جزء: الفواصل الزمنية "البشرية"
-        # البحث يأخذ بين 25 إلى 45 ثانية (بطيء لكن آمن ودقيق)
-        time.sleep(random.uniform(25, 45))
+        if result is True:
+            hits += 1
+            requests.post(WEBHOOK_URL, json={
+                "content": f"🎯 **صيد محتمل!** `{target}` <@{MY_ID}>"
+            })
         
-        # استراحة "القهوة": كل 15 فحص، توقف تماماً لمدة 10 دقائق
-        if random.random() < 0.05: # احتمالية عشوائية للاستراحة
-            print("☕ استراحة محاكاة للبشر لمدة 10 دقائق...")
-            time.sleep(600)
+        # تحديث الإيمبد كل 5 عمليات فحص لتقليل الضغط
+        if total_checks % 5 == 0:
+            send_monitor_embed()
+            
+        # وقت انتظار بشري (أمان عالي)
+        time.sleep(random.uniform(25, 40))
 
-# تشغيل في الخلفية
-Thread(target=start_hunting, daemon=True).start()
+# تشغيل الخيط الخلفي
+Thread(target=worker, daemon=True).start()
 
 if __name__ == "__main__":
+    # رندر يستخدم بورت 10000 تلقائياً
     app.run(host="0.0.0.0", port=10000)
