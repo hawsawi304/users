@@ -16,10 +16,6 @@ stats = {
     "msg_id": None
 }
 
-# ================== LOGGER ==================
-def log(msg):
-    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
-
 # ================== HOME ==================
 @app.route("/")
 def home():
@@ -32,7 +28,7 @@ def update_status(webhook):
             payload = {
                 "embeds": [{
                     "title": "📡 رادار القنص V7 - الحالة المباشرة",
-                    "description": f"🔍 يفحص الآن: `{stats['current']}`",
+                    "description": f"🔍 يفحص الآن: `{stats['current']}`\n⏰ آخر تحديث: {datetime.datetime.now().strftime('%H:%M:%S')}",
                     "color": 0x3498db,
                     "fields": [
                         {"name": "📊 تم فحص", "value": f"`{stats['checked']}`", "inline": True},
@@ -47,7 +43,6 @@ def update_status(webhook):
                 r = requests.post(webhook + "?wait=true", json=payload, timeout=10)
                 if r.status_code == 200:
                     stats["msg_id"] = r.json().get("id")
-                    log("📨 Discord Status message created")
             else:
                 requests.patch(
                     f"{webhook}/messages/{stats['msg_id']}",
@@ -55,7 +50,7 @@ def update_status(webhook):
                     timeout=10
                 )
         except Exception as e:
-            log(f"🔥 Status update error: {e}")
+            print(f"[Status Error] {e}")
 
         time.sleep(15)
 
@@ -63,18 +58,17 @@ def update_status(webhook):
 def sniper():
     webhook = os.getenv("WEBHOOK_URL")
     if not webhook:
-        log("❌ WEBHOOK_URL غير موجود")
+        print("🚨 WEBHOOK_URL not set!")
         return
 
     try:
-        r = requests.post(
+        requests.post(
             webhook,
             json={"content": "🚀 **بوت V7 اشتغل بنجاح!**"},
             timeout=10
         )
-        log(f"📨 Webhook start status: {r.status_code}")
     except Exception as e:
-        log(f"❌ Webhook error: {e}")
+        print(f"[Webhook Error] {e}")
 
     threading.Thread(
         target=update_status,
@@ -82,14 +76,16 @@ def sniper():
         daemon=True
     ).start()
 
-    chars = "abcdefghijklmnopqrstuvwxyz0123456789._"
+    chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    extra_chars = "._"
 
     while True:
-        length = random.randint(1, 4)  # طول اليوزر من 1 إلى 4
-        user = "".join(random.choices(chars, k=length))
-        stats["current"] = user
-
         try:
+            # طول من 3 إلى 4 فقط
+            length = random.randint(3, 4)
+            user = "".join(random.choices(chars + extra_chars, k=length))
+            stats["current"] = user
+
             r = requests.post(
                 "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
                 json={"username": user},
@@ -98,73 +94,32 @@ def sniper():
 
             stats["checked"] += 1
 
-            # ---- RATE LIMIT ----
-            if r.status_code == 429:
-                log(f"⏳ RATE LIMIT - توقف 15 ثانية | user={user}")
-                time.sleep(15)
-                continue
-
-            # ---- رد غير طبيعي ----
-            if r.status_code != 200:
-                log(f"⚠️ Status غير متوقع {r.status_code} | user={user}")
-                time.sleep(2)
-                continue
-
-            try:
-                data = r.json()
-            except Exception as e:
-                log(f"❌ JSON Error | user={user} | {e}")
-                continue
-
-            # ---- فحص النتيجة ----
-            if "taken" not in data:
-                log(f"⚠️ رد بدون taken | user={user} | data={data}")
-                continue
-
-            if data["taken"] is False:
+            if r.status_code == 200 and r.json().get("taken") is False:
                 stats["found"] += 1
-                log(f"🎯 AVAILABLE (first check): {user}")
+                try:
+                    requests.post(
+                        webhook,
+                        json={"content": f"🎯 **يوزر متاح:** `{user}`"},
+                        timeout=10
+                    )
+                except Exception as e:
+                    print(f"[Webhook Post Error] {e}")
 
-                res = requests.post(
-                    webhook,
-                    json={"content": f"🎯 **يوزر متاح:** `{user}`"},
-                    timeout=10
-                )
+            elif r.status_code == 429:
+                # Rate Limit -> توقف طويل
+                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ⏳ RATE LIMIT - توقف 120 ثانية | user={user}")
+                time.sleep(120)
+            elif r.status_code != 200:
+                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ⚠️ Status غير متوقع {r.status_code} | user={user}")
 
-                if res.status_code not in (200, 204):
-                    log(f"❌ Webhook فشل | status={res.status_code}")
-
-            else:
-                # ---- إعادة فحص لتجنب false negative ----
-                time.sleep(1)
-                r2 = requests.post(
-                    "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
-                    json={"username": user},
-                    timeout=5
-                )
-
-                if r2.status_code == 200:
-                    try:
-                        d2 = r2.json()
-                        if d2.get("taken") is False:
-                            stats["found"] += 1
-                            log(f"🎯 AVAILABLE (second check): {user}")
-
-                            requests.post(
-                                webhook,
-                                json={"content": f"🎯 **يوزر متاح (إعادة فحص):** `{user}`"},
-                                timeout=10
-                            )
-                    except Exception as e:
-                        log(f"❌ JSON Error second check | user={user} | {e}")
-
-            time.sleep(2)
+            # فاصل بين كل محاولة لتقليل الضغط على Discord
+            time.sleep(6)
 
         except Exception as e:
-            log(f"🔥 Exception عام | user={user} | {e}")
-            time.sleep(5)
+            print(f"[Sniper Error] {e}")
+            time.sleep(10)
 
-# ================== START ON FIRST REQUEST (FLASK 3 SAFE) ==================
+# ================== START ON FIRST REQUEST ==================
 started = False
 
 @app.before_request
@@ -173,9 +128,8 @@ def start_sniper_once():
     if not started:
         started = True
         threading.Thread(target=sniper, daemon=True).start()
-        log("🚀 Sniper thread started")
 
 # ================== RUN FLASK ==================
 if __name__ == "__main__":
-    log("🟢 Flask app starting...")
-    app.run(host="0.0.0.0", port=5000)
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 🟢 Flask app starting...")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
