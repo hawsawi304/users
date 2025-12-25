@@ -19,7 +19,7 @@ stats = {
 # ================== HOME ==================
 @app.route("/")
 def home():
-    return f"V7 PRO IS RUNNING - CHECKED: {stats['checked']}"
+    return f"V7 RUNNING | CHECKED: {stats['checked']} | FOUND: {stats['found']}"
 
 # ================== DISCORD STATUS ==================
 def update_status(webhook):
@@ -27,14 +27,13 @@ def update_status(webhook):
         try:
             payload = {
                 "embeds": [{
-                    "title": "📡 رادار القنص V7 - الحالة المباشرة",
+                    "title": "📡 V7 USER SCANNER",
                     "description": f"🔍 يفحص الآن: `{stats['current']}`",
-                    "color": 0x3498db,
+                    "color": 0x2ecc71,
                     "fields": [
-                        {"name": "📊 تم فحص", "value": f"`{stats['checked']}`", "inline": True},
-                        {"name": "🎯 تم صيد", "value": f"`{stats['found']}`", "inline": True}
+                        {"name": "📊 Checked", "value": str(stats["checked"]), "inline": True},
+                        {"name": "🎯 Found", "value": str(stats["found"]), "inline": True}
                     ],
-                    "footer": {"text": "Render Live Update"},
                     "timestamp": datetime.datetime.utcnow().isoformat()
                 }]
             }
@@ -54,20 +53,28 @@ def update_status(webhook):
 
         time.sleep(15)
 
+# ================== CHECK USER ==================
+def check_username(user):
+    try:
+        r = requests.post(
+            "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
+            json={"username": user},
+            timeout=5
+        )
+        if r.status_code == 200:
+            return r.json().get("taken")
+    except:
+        pass
+    return None
+
 # ================== SNIPER ==================
 def sniper():
     webhook = os.getenv("WEBHOOK_URL")
     if not webhook:
+        print("NO WEBHOOK")
         return
 
-    try:
-        requests.post(
-            webhook,
-            json={"content": "🚀 **بوت V7 اشتغل بنجاح!**"},
-            timeout=10
-        )
-    except:
-        pass
+    requests.post(webhook, json={"content": "🚀 **V7 Started**"}, timeout=10)
 
     threading.Thread(
         target=update_status,
@@ -79,36 +86,55 @@ def sniper():
 
     while True:
         try:
-            user = "".join(random.choices(chars, k=4))
+            user = "".join(random.choices(chars, k=random.choice([3, 4])))
             stats["current"] = user
-
-            r = requests.post(
-                "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
-                json={"username": user},
-                timeout=5
-            )
-
             stats["checked"] += 1
 
-            if r.status_code == 200 and r.json().get("taken") is False:
+            first = check_username(user)
+
+            if first is False:
+                # متاح من أول مرة
                 stats["found"] += 1
+                print(f"[FOUND] {user}")
                 requests.post(
                     webhook,
-                    json={"content": f"🎯 **يوزر متاح:** `{user}`"},
+                    json={"content": f"🎯 **USERNAME AVAILABLE:** `{user}`"},
                     timeout=10
                 )
 
+            elif first is True:
+                # إعادة فحص للتأكيد
+                time.sleep(3)
+                second = check_username(user)
+
+                if second is False:
+                    stats["found"] += 1
+                    print(f"[FOUND AFTER RETRY] {user}")
+                    requests.post(
+                        webhook,
+                        json={"content": f"🎯 **USERNAME AVAILABLE (CONFIRMED):** `{user}`"},
+                        timeout=10
+                    )
+                else:
+                    print(f"[SKIPPED] {user}")
+
             time.sleep(2)
 
-        except:
+        except Exception as e:
+            print("ERROR:", e)
             time.sleep(10)
 
-# ================== START ON FIRST REQUEST (FLASK 3 SAFE) ==================
+# ================== START ==================
 started = False
 
 @app.before_request
-def start_sniper_once():
+def start_once():
     global started
     if not started:
         started = True
         threading.Thread(target=sniper, daemon=True).start()
+
+# ================== RUN ==================
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
