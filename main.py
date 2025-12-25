@@ -81,8 +81,8 @@ def sniper():
 
     while True:
         try:
-            # طول من 3 إلى 4 فقط
-            length = random.randint(3, 4)
+            # طول ثابت 4
+            length = 4
             user = "".join(random.choices(chars + extra_chars, k=length))
             stats["current"] = user
 
