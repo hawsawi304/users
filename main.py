@@ -1,4 +1,9 @@
-import os, random, time, requests, threading, datetime
+import os
+import random
+import time
+import requests
+import threading
+import datetime
 from flask import Flask
 
 app = Flask(__name__)
@@ -11,18 +16,20 @@ stats = {
     "status": "متصل ✅"
 }
 
+# ================== صفحة الهوم ==================
 @app.route("/")
 def home():
-    return f"V7.2 ACTIVE - CHECKED: {stats['checked']}"
+    return f"V7.4 FINAL ACTIVE - CHECKED: {stats['checked']} - FOUND: {stats['found']}"
 
+# ================== تحديث الحالة على الديسكورد ==================
 def update_status(webhook):
     while True:
         try:
             payload = {
                 "embeds": [{
-                    "title": "📡 رادار القنص V7.2 - المطور",
+                    "title": "📡 رادار القنص V7.4 - المطور النهائي",
                     "description": f"🔍 يفحص الآن: `{stats['current']}`\n🚦 الحالة: `{stats['status']}`",
-                    "color": 0x3498db,
+                    "color": 0x2ecc71,
                     "fields": [
                         {"name": "📊 فحص حقيقي", "value": f"`{stats['checked']}`", "inline": True},
                         {"name": "🎯 تم صيد", "value": f"`{stats['found']}`", "inline": True}
@@ -31,6 +38,7 @@ def update_status(webhook):
                     "timestamp": datetime.datetime.utcnow().isoformat()
                 }]
             }
+
             if stats["msg_id"] is None:
                 r = requests.post(webhook + "?wait=true", json=payload, timeout=10)
                 if r.status_code == 200:
@@ -38,9 +46,10 @@ def update_status(webhook):
             else:
                 requests.patch(f"{webhook}/messages/{stats['msg_id']}", json=payload, timeout=10)
         except:
-            pass
-        time.sleep(15)
+            time.sleep(5)
+        time.sleep(20)  # تحديث كل 20 ثانية لتقليل الحظر
 
+# ================== فحص اليوزر ==================
 def check_username(user, headers):
     try:
         r = requests.post(
@@ -57,15 +66,24 @@ def check_username(user, headers):
             return "rate_limit"
         return "error"
     except:
+        stats["status"] = "مشكلة اتصال 🌐"
         return "error"
 
+# ================== توليد يوزر عشوائي ==================
 def generate_username():
-    chars = "abcdefghijklmnopqrstuvwxyz0123456789._"
-    return "".join(random.choices(chars, k=4))
+    chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    specials = "._"
+    # توليد يوزر 4 أحرف مع السماح بنقطتين أو شرطة سفلية
+    user = "".join(random.choices(chars, k=3))
+    user += random.choice(specials + chars)
+    return user
 
+# ================== البوت الرئيسي ==================
 def sniper():
     webhook = os.getenv("WEBHOOK_URL")
-    if not webhook: return
+    if not webhook: 
+        print("WEBHOOK_URL غير محدد")
+        return
 
     threading.Thread(target=update_status, args=(webhook,), daemon=True).start()
 
@@ -80,25 +98,33 @@ def sniper():
             stats["current"] = user
 
             res = check_username(user, headers)
-            
+
             if res == "available":
-                # تأكيد مزدوج سريع
+                # تأكيد مزدوج لتقليل ضياع الفرص
                 time.sleep(0.5)
                 if check_username(user, headers) == "available":
                     stats["found"] += 1
-                    requests.post(webhook, json={"content": f"🎯 **يوزر متاح مؤكد:** `{user}`"}, timeout=10)
+                    # محاولة إرسال الصيد 3 مرات
+                    for _ in range(3):
+                        try:
+                            r_send = requests.post(webhook, json={"content": f"🎯 @everyone **يوزر متاح مؤكد:** `{user}`"}, timeout=10)
+                            if r_send.status_code == 200:
+                                break
+                        except:
+                            time.sleep(2)
                 stats["checked"] += 1
             elif res == "taken":
                 stats["checked"] += 1
             elif res == "rate_limit":
-                time.sleep(40) # انتظار أطول لفك الحظر
+                stats["status"] = "معدل طلبات مرتفع ⏳"
+                time.sleep(60)
 
-            time.sleep(1.2) # سرعة متزنة
+            time.sleep(1.5)  # السرعة المطلوبة (1.5 ثانية) لضمان الاستقرار
+        except Exception as e:
+            stats["status"] = "خطأ غير متوقع ⚠️"
+            time.sleep(5)
 
-        except:
-            stats["status"] = "مشكلة اتصال 🌐"
-            time.sleep(10)
-
+# ================== تشغيل البوت عند أول طلب ==================
 started = False
 
 @app.before_request
@@ -108,6 +134,7 @@ def start_sniper_once():
         started = True
         threading.Thread(target=sniper, daemon=True).start()
 
+# ================== تشغيل السيرفر ==================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
