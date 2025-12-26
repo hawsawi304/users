@@ -11,7 +11,7 @@ import uvicorn
 # ====== ENV ======
 TOKEN = os.getenv("TOKEN")  # توكن واحد
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-DELAY_MIN = float(os.getenv("DELAY_MIN", 6))   # أبطأ لتجنب Rate Limit
+DELAY_MIN = float(os.getenv("DELAY_MIN", 6))
 DELAY_MAX = float(os.getenv("DELAY_MAX", 10))
 
 # ====== LOGGING ======
@@ -64,7 +64,7 @@ class DiscordScanner:
     async def producer(self):
         while True:
             await self.queue.put(generate_username())
-            await asyncio.sleep(0.5)  # آمن جدًا لتجنب Rate Limit
+            await asyncio.sleep(0.5)
 
     async def check(self, username):
         account = self.account
@@ -110,7 +110,7 @@ class DiscordScanner:
         asyncio.create_task(self.producer())
         asyncio.create_task(self.worker())
         while True:
-            await asyncio.sleep(10)  # Keep-Alive
+            await asyncio.sleep(10)
 
 # ====== FASTAPI WEB SERVICE ======
 app = FastAPI()
@@ -119,10 +119,14 @@ app = FastAPI()
 async def ping():
     return {"status": "ok"}
 
-# ====== START SCANNER ======
-scanner = DiscordScanner(TOKEN)
-asyncio.create_task(scanner.run())
+# ====== START SCANNER + RUN SERVER ======
+async def main():
+    scanner = DiscordScanner(TOKEN)
+    asyncio.create_task(scanner.run())
+    port = int(os.getenv("PORT", 10000))
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
+    server = uvicorn.Server(config)
+    await server.serve()
 
-# ====== RUN ======
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+    asyncio.run(main())
