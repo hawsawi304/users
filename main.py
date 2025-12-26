@@ -11,8 +11,8 @@ import uvicorn
 # ====== ENV ======
 TOKEN = os.getenv("TOKEN")  # توكن واحد
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-DELAY_MIN = float(os.getenv("DELAY_MIN", 6))
-DELAY_MAX = float(os.getenv("DELAY_MAX", 10))
+DELAY_MIN = float(os.getenv("DELAY_MIN", 2))  # أقل تأخير 2 ثانية
+DELAY_MAX = float(os.getenv("DELAY_MAX", 4))  # أعلى تأخير 4 ثواني
 
 # ====== LOGGING ======
 logging.basicConfig(
@@ -24,8 +24,11 @@ logging.basicConfig(
 ALLOWED_CHARS = string.ascii_lowercase + string.digits + "._"
 
 def generate_username():
-    length = 4  # طول الاسم ثابت 4 أحرف
-    return "".join(random.choice(ALLOWED_CHARS) for _ in range(length))
+    while True:
+        length = random.randint(2, 4)  # من 2 إلى 4 حروف
+        username = "".join(random.choice(ALLOWED_CHARS) for _ in range(length))
+        if username[0].isalnum() and username[-1].isalnum():  # لا يبدأ أو ينتهي بنقطة أو _
+            return username
 
 # ====== WEBHOOK ======
 async def notify_available(username):
