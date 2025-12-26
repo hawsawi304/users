@@ -29,11 +29,12 @@ def update_status(webhook):
                 "embeds": [{
                     "title": "📡 V7 USER SCANNER",
                     "description": f"🔍 يفحص الآن: `{stats['current']}`",
-                    "color": 0x2ecc71,
+                    "color": 0x3498db,
                     "fields": [
                         {"name": "📊 Checked", "value": str(stats["checked"]), "inline": True},
                         {"name": "🎯 Found", "value": str(stats["found"]), "inline": True}
                     ],
+                    "footer": {"text": "Render Live"},
                     "timestamp": datetime.datetime.utcnow().isoformat()
                 }]
             }
@@ -65,7 +66,7 @@ def check_username(user):
             return r.json().get("taken")
     except:
         pass
-    return None
+    return "error"
 
 # ================== SNIPER ==================
 def sniper():
@@ -74,7 +75,11 @@ def sniper():
         print("NO WEBHOOK")
         return
 
-    requests.post(webhook, json={"content": "🚀 **V7 Started**"}, timeout=10)
+    requests.post(
+        webhook,
+        json={"content": "🚀 **V7 Scanner Started**"},
+        timeout=10
+    )
 
     threading.Thread(
         target=update_status,
@@ -90,33 +95,25 @@ def sniper():
             stats["current"] = user
             stats["checked"] += 1
 
-            first = check_username(user)
+            results = []
 
-            if first is False:
-                # متاح من أول مرة
+            # فحص 3 مرات للتأكيد
+            for _ in range(3):
+                res = check_username(user)
+                results.append(res)
+                time.sleep(1.5)
+
+            # إذا ولا مرة قال محجوز → متاح مضمون
+            if True not in results and "error" not in results:
                 stats["found"] += 1
-                print(f"[FOUND] {user}")
+                print(f"[FOUND CONFIRMED] {user}")
                 requests.post(
                     webhook,
                     json={"content": f"🎯 **USERNAME AVAILABLE:** `{user}`"},
                     timeout=10
                 )
-
-            elif first is True:
-                # إعادة فحص للتأكيد
-                time.sleep(3)
-                second = check_username(user)
-
-                if second is False:
-                    stats["found"] += 1
-                    print(f"[FOUND AFTER RETRY] {user}")
-                    requests.post(
-                        webhook,
-                        json={"content": f"🎯 **USERNAME AVAILABLE (CONFIRMED):** `{user}`"},
-                        timeout=10
-                    )
-                else:
-                    print(f"[SKIPPED] {user}")
+            else:
+                print(f"[SKIPPED] {user} | {results}")
 
             time.sleep(2)
 
