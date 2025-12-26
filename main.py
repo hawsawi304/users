@@ -24,7 +24,7 @@ logging.basicConfig(
 ALLOWED_CHARS = string.ascii_lowercase + string.digits + "._"
 
 def generate_username():
-    length = random.randint(1, 4)
+    length = 4  # طول الاسم ثابت 4 أحرف
     return "".join(random.choice(ALLOWED_CHARS) for _ in range(length))
 
 # ====== WEBHOOK ======
