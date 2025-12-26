@@ -4,9 +4,17 @@ import time
 import requests
 import threading
 import datetime
+import logging
+import gc
 from flask import Flask
 
 app = Flask(__name__)
+
+# ================== LOGGING ==================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 # ================== STATS ==================
 stats = {
@@ -20,6 +28,30 @@ stats = {
 @app.route("/")
 def home():
     return f"V7 RUNNING | CHECKED: {stats['checked']} | FOUND: {stats['found']}"
+
+@app.route("/test/<username>")
+def test_user(username):
+    """اختبار يوزر معين"""
+    results = []
+    for i in range(3):
+        res = check_username(username)
+        results.append(res)
+        time.sleep(2)
+    
+    return {
+        "username": username,
+        "results": results,
+        "false_count": results.count(False),
+        "available": results.count(False) >= 2 and results.count("error") == 0
+    }
+
+# ================== SAFE WEBHOOK ==================
+def safe_webhook(webhook, content):
+    """يرسل للويب هوك بدون ما يعلق الكود"""
+    try:
+        requests.post(webhook, json=content, timeout=10)
+    except Exception as e:
+        logging.error(f"Webhook failed: {e}")
 
 # ================== DISCORD STATUS ==================
 def update_status(webhook):
@@ -56,30 +88,51 @@ def update_status(webhook):
 
 # ================== CHECK USER ==================
 def check_username(user):
+    """يفحص اليوزر مع معالجة أفضل للأخطاء"""
     try:
         r = requests.post(
             "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
             json={"username": user},
-            timeout=5
+            timeout=15,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
         )
+        
+        # معالجة Rate Limit
+        if r.status_code == 429:
+            wait = r.json().get("retry_after", 60)
+            logging.warning(f"⏳ Rate limited: waiting {wait}s")
+            time.sleep(wait + 5)
+            return "rate_limited"
+        
+        # نجح الطلب
         if r.status_code == 200:
-            return r.json().get("taken")
-    except:
-        pass
-    return "error"
+            return r.json().get("taken", True)
+        
+        # أي مشكلة ثانية
+        logging.error(f"⚠️ Status {r.status_code} for {user}")
+        return "error"
+        
+    except requests.exceptions.Timeout:
+        logging.error(f"⏱️ Timeout for {user}")
+        return "error"
+    except requests.exceptions.ConnectionError:
+        logging.error(f"🔌 Connection error for {user}")
+        return "error"
+    except Exception as e:
+        logging.error(f"❌ Exception: {e}")
+        return "error"
 
 # ================== SNIPER ==================
 def sniper():
     webhook = os.getenv("WEBHOOK_URL")
     if not webhook:
-        print("NO WEBHOOK")
+        logging.error("NO WEBHOOK URL!")
         return
 
-    requests.post(
-        webhook,
-        json={"content": "🚀 **V7 Scanner Started**"},
-        timeout=10
-    )
+    safe_webhook(webhook, {"content": "🚀 **V7 Scanner Started**"})
 
     threading.Thread(
         target=update_status,
@@ -94,32 +147,51 @@ def sniper():
             user = "".join(random.choices(chars, k=random.choice([3, 4])))
             stats["current"] = user
             stats["checked"] += 1
+            
+            # تنظيف الذاكرة كل 1000 فحص
+            if stats["checked"] % 1000 == 0:
+                gc.collect()
+                logging.info(f"🧹 Memory cleaned at {stats['checked']}")
 
             results = []
 
-            # فحص 3 مرات للتأكيد
-            for _ in range(3):
+            # فحص 3 مرات
+            for attempt in range(3):
                 res = check_username(user)
+                
+                # إذا جاء Rate Limit، استنى وحاول مرة ثانية
+                if res == "rate_limited":
+                    time.sleep(60)
+                    res = check_username(user)
+                
                 results.append(res)
-                time.sleep(1.5)
+                time.sleep(random.uniform(4, 7))  # وقت عشوائي بين الفحوصات
 
-            # إذا ولا مرة قال محجوز → متاح مضمون
-            if True not in results and "error" not in results:
+            # حساب النتائج
+            false_count = results.count(False)  # عدد المرات اللي قال متاح
+            error_count = results.count("error")  # عدد الأخطاء
+            
+            logging.info(f"🔍 {user}: {results}")
+
+            # ✅ إذا على الأقل مرتين قال متاح وما فيه أخطاء → أرسل
+            if false_count >= 2 and error_count == 0:
                 stats["found"] += 1
-                print(f"[FOUND CONFIRMED] {user}")
-                requests.post(
+                logging.info(f"✅ FOUND AVAILABLE: {user}")
+                safe_webhook(
                     webhook,
-                    json={"content": f"🎯 **USERNAME AVAILABLE:** `{user}`"},
-                    timeout=10
+                    {"content": f"🎯 **USERNAME AVAILABLE:** `{user}`\n📊 Results: `{results}`"}
                 )
             else:
-                print(f"[SKIPPED] {user} | {results}")
+                logging.info(f"❌ SKIPPED: {user}")
 
-            time.sleep(2)
+            # انتظار بين كل يوزر
+            time.sleep(random.uniform(6, 10))
 
         except Exception as e:
-            print("ERROR:", e)
-            time.sleep(10)
+            logging.error(f"💥 CRITICAL ERROR: {e}")
+            safe_webhook(webhook, {"content": f"⚠️ **Error:** {e}"})
+            time.sleep(30)
+            continue  # استمر بدون ما توقف
 
 # ================== START ==================
 started = False
