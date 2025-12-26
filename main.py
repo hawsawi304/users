@@ -4,7 +4,7 @@ import httpx
 import random
 import string
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import FastAPI
 import uvicorn
 
@@ -14,10 +14,8 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 DELAY_MIN = float(os.getenv("DELAY_MIN", 3))
 DELAY_MAX = float(os.getenv("DELAY_MAX", 6))
 
-# ====== LOGGING ======
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# ====== USERNAME GENERATOR ======
 ALLOWED_CHARS = string.ascii_lowercase + string.digits + "._"
 
 def generate_username():
@@ -27,7 +25,6 @@ def generate_username():
         if username[0].isalnum() and username[-1].isalnum():
             return username
 
-# ====== WEBHOOK ======
 async def notify_available(username):
     payload = {
         "content": "@everyone",
@@ -40,18 +37,17 @@ async def notify_available(username):
     async with httpx.AsyncClient() as client:
         r = await client.post(WEBHOOK_URL, json=payload, timeout=10)
         if r.status_code != 204:
-            logging.warning(f"⚠️ Webhook error {r.status_code}")
+            logging.warning(f"⚠️ Webhook returned {r.status_code}")
 
-# ====== SCANNER ======
 class DiscordScanner:
     def __init__(self, token):
         self.token = token.strip()
         self.client = httpx.AsyncClient(headers={"Authorization": self.token})
-        self.rate_reset = datetime.now()
+        self.next_retry = datetime.now()
 
     async def check(self, username):
-        if datetime.now() < self.rate_reset:
-            await asyncio.sleep((self.rate_reset - datetime.now()).total_seconds())
+        if datetime.now() < self.next_retry:
+            await asyncio.sleep((self.next_retry - datetime.now()).total_seconds())
 
         try:
             r = await self.client.post(
@@ -63,32 +59,28 @@ class DiscordScanner:
             logging.error(f"❌ Network error for {username}: {e}")
             return
 
-        # ★ التعامل مع 429 بشكل صحيح
         if r.status_code == 429:
-            retry_after = None
+            retry = None
             try:
-                retry_after = float(r.json().get("retry_after", 0))
+                retry = float(r.json().get("retry_after", 0))
             except:
-                retry_after = float(r.headers.get("Retry-After", 0))
-            wait = retry_after + 3
-            self.rate_reset = datetime.now() + timedelta(seconds=wait)
+                retry = float(r.headers.get("Retry-After", 0))
+            wait = retry + 3
+            self.next_retry = datetime.now() + timedelta(seconds=wait)
             logging.warning(f"⏳ Rate limited – waiting {wait}s")
             return
 
-        # ✖️ رد غير صالح أو فارغ
         if not r.content:
-            logging.warning(f"⚠️ Empty response for {username}")
+            logging.warning(f"⚠️ Empty/invalid response for {username}")
             return
 
-        # ✅ الرد صحيح
         try:
             data = r.json()
         except:
-            logging.warning(f"⚠️ Response not JSON for {username}")
+            logging.warning(f"⚠️ Non‑JSON response for {username}")
             return
 
-        taken = data.get("taken")
-        if taken is False:
+        if data.get("taken") is False:
             logging.info(f"[AVAILABLE] {username}")
             await notify_available(username)
         else:
@@ -100,7 +92,6 @@ class DiscordScanner:
             await self.check(name)
             await asyncio.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
 
-# ====== FASTAPI ======
 app = FastAPI()
 
 @app.get("/ping")
